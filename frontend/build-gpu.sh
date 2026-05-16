@@ -188,3 +188,67 @@ else
   exit 1
 fi
 
+# Post-bundle: fix the AppImage's `.DirIcon` symlink.
+#
+# linuxdeploy-plugin-appimage (which Tauri invokes to package the AppImage)
+# creates `.DirIcon` as an *absolute* symlink to the AppDir on the build
+# machine — e.g. /home/<you>/.../meetily.AppDir/meetily.png. That path
+# doesn't exist on any other system, so AppImageLauncher and a number of
+# desktop integrators can't extract the icon during install and silently
+# fall back to a generic application icon.
+#
+# Fix it by repacking the AppImage with `.DirIcon` rewritten as a relative
+# symlink to the icon already present in the AppDir root.
+if [[ "$OS" == "linux" ]]; then
+  APPIMAGE_DIR="$WORKSPACE_ROOT/target/release/bundle/appimage"
+  APPIMAGE_PATH=$(ls "$APPIMAGE_DIR"/*.AppImage 2>/dev/null | head -1)
+
+  if [[ -n "$APPIMAGE_PATH" && -f "$APPIMAGE_PATH" ]]; then
+    echo ""
+    echo -e "${BLUE}🔧 Verifying AppImage .DirIcon symlink...${NC}"
+
+    FIX_TMP=$(mktemp -d)
+    (
+      cd "$FIX_TMP"
+      "$APPIMAGE_PATH" --appimage-extract '.DirIcon' >/dev/null 2>&1 || true
+
+      DIRICON_RAW=$(readlink squashfs-root/.DirIcon 2>/dev/null || echo "")
+      if [[ -L squashfs-root/.DirIcon && "$DIRICON_RAW" == /* ]]; then
+        DIRICON_TARGET=$(basename "$DIRICON_RAW")
+        echo -e "${YELLOW}   Absolute .DirIcon symlink detected (not portable); repacking…${NC}"
+
+        rm -rf squashfs-root
+        "$APPIMAGE_PATH" --appimage-extract >/dev/null 2>&1
+
+        rm -f squashfs-root/.DirIcon
+        if [[ -f "squashfs-root/$DIRICON_TARGET" ]]; then
+          (cd squashfs-root && ln -s "$DIRICON_TARGET" .DirIcon)
+        elif [[ -f squashfs-root/meetily.png ]]; then
+          (cd squashfs-root && ln -s meetily.png .DirIcon)
+        fi
+
+        APPIMAGE_ARCH=$(uname -m)
+        APPIMAGETOOL="$HOME/.cache/tauri/appimagetool-$APPIMAGE_ARCH.AppImage"
+        if [[ ! -x "$APPIMAGETOOL" ]]; then
+          echo -e "   Downloading appimagetool ($APPIMAGE_ARCH)…"
+          mkdir -p "$(dirname "$APPIMAGETOOL")"
+          curl --fail --silent --show-error --location \
+            "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-$APPIMAGE_ARCH.AppImage" \
+            -o "$APPIMAGETOOL"
+          chmod +x "$APPIMAGETOOL"
+        fi
+
+        if ARCH="$APPIMAGE_ARCH" NO_STRIP=true "$APPIMAGETOOL" \
+             --no-appstream squashfs-root "$APPIMAGE_PATH" >/dev/null 2>&1; then
+          echo -e "${GREEN}   ✅ Repacked with relative .DirIcon${NC}"
+        else
+          echo -e "${YELLOW}   ⚠️ Repack failed; icon may not show on install${NC}"
+        fi
+      else
+        echo -e "${GREEN}   ✅ .DirIcon already correct${NC}"
+      fi
+    )
+    rm -rf "$FIX_TMP"
+  fi
+fi
+
