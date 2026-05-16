@@ -10,16 +10,52 @@ If you're new to building on Linux, start here. These simple commands work for m
 
 ### 1. Install Basic Dependencies
 
+You need three things: a system toolchain, Rust, and Node.js + pnpm.
+
+#### System packages
+
 ```bash
 # Ubuntu/Debian
 sudo apt update
-sudo apt install build-essential cmake git
+sudo apt install -y \
+  build-essential cmake git pkg-config \
+  clang libclang-dev \
+  libasound2-dev \
+  libwebkit2gtk-4.1-dev libjavascriptcoregtk-4.1-dev libsoup-3.0-dev \
+  libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev
 
 # Fedora/RHEL
-sudo dnf install gcc-c++ cmake git
+sudo dnf install -y \
+  gcc-c++ cmake git pkgconf-pkg-config \
+  clang clang-devel \
+  alsa-lib-devel \
+  webkit2gtk4.1-devel javascriptcoregtk4.1-devel libsoup3-devel \
+  gtk3-devel libappindicator-gtk3-devel librsvg2-devel openssl-devel
 
 # Arch Linux
-sudo pacman -S base-devel cmake git
+sudo pacman -S --needed \
+  base-devel cmake git pkgconf \
+  clang \
+  alsa-lib \
+  webkit2gtk-4.1 libsoup3 \
+  gtk3 libayatana-appindicator librsvg openssl
+```
+
+These cover: the build toolchain, `bindgen` (`clang` / `libclang-dev`), the ALSA audio backend (`libasound2-dev`), the Tauri 2 runtime (`webkit2gtk-4.1`, `javascriptcoregtk-4.1`, `libsoup-3.0`, `gtk-3`), the `tray-icon` feature (`libayatana-appindicator3-dev`), and AppImage bundling (`librsvg2-dev`).
+
+#### Rust toolchain
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+```
+
+#### Node.js and pnpm
+
+Install Node.js 20+ (via your package manager, [nvm](https://github.com/nvm-sh/nvm), or [fnm](https://github.com/Schniz/fnm)), then enable `pnpm`:
+
+```bash
+corepack enable pnpm
 ```
 
 ### 2. Build and Run
@@ -119,6 +155,15 @@ CMAKE_POSITION_INDEPENDENT_CODE=ON \
 - `CMAKE_CUDA_STANDARD=17`: Ensures C++17 compatibility
 - `CMAKE_POSITION_INDEPENDENT_CODE=ON`: Fixes linking issues on modern systems
 
+> ⚠️ **Ubuntu's `nvidia-cuda-toolkit` package:** On Debian/Ubuntu, the apt-installed CUDA toolkit places libraries under `/usr/lib/x86_64-linux-gnu/` rather than the `/usr/local/cuda/lib64/` layout that `llama-cpp-sys` expects. If you see `could not find native static library 'cudart_static'`, also export:
+>
+> ```bash
+> export CUDA_PATH=/usr
+> export RUSTFLAGS="-L /usr/lib/x86_64-linux-gnu"
+> ```
+>
+> Users who installed CUDA from NVIDIA's official `.run` installer or repo (which uses `/usr/local/cuda`) don't need this.
+
 ---
 
 ### 🔵 Vulkan Setup (Cross-Platform Fallback)
@@ -211,10 +256,11 @@ TAURI_GPU_FEATURE=openblas ./build-gpu.sh
 
 ### Build Output Location
 
-After successful build:
+After a successful build, artifacts land in the workspace `target` directory at the repo root:
 
 ```
-src-tauri/target/release/bundle/appimage/Meetily_<version>_amd64.AppImage
+target/release/bundle/appimage/meetily_<version>_amd64.AppImage
+target/release/bundle/deb/meetily_<version>_amd64.deb
 ```
 
 ---
@@ -225,6 +271,16 @@ src-tauri/target/release/bundle/appimage/Meetily_<version>_amd64.AppImage
 
 - **Fix:** Install `nvidia-cuda-toolkit` or set `CUDA_PATH` environment variable
 - **Check:** `nvcc --version` should work
+
+### "could not find native static library `cudart_static`"
+
+- **Cause:** Ubuntu/Debian's `nvidia-cuda-toolkit` puts CUDA libraries in the multiarch path, not `/usr/local/cuda/lib64`.
+- **Fix:** Export `CUDA_PATH=/usr` and `RUSTFLAGS="-L /usr/lib/x86_64-linux-gnu"` before running `./build-gpu.sh`. See the [NVIDIA CUDA Setup](#-nvidia-cuda-setup) section.
+
+### "fatal error: 'stdbool.h' file not found" (bindgen)
+
+- **Cause:** `clang` / `libclang-dev` is not installed. `bindgen` (used by `llama-cpp-sys`) needs them to parse C headers.
+- **Fix:** `sudo apt install clang libclang-dev` (or your distro's equivalent — see [Install Basic Dependencies](#1-install-basic-dependencies)).
 
 ### "Vulkan detected but missing dependencies"
 
@@ -297,8 +353,12 @@ sudo apt install nvidia-driver-550 nvidia-cuda-toolkit
 # Verify
 nvidia-smi --query-gpu=compute_cap --format=csv
 
-# Build (adjust architecture for your GPU)
-CMAKE_CUDA_ARCHITECTURES=86 \ # (86 may change in your case)
+# Build (adjust architecture for your GPU; 86 = RTX 30-series)
+# On Ubuntu/Debian, also export CUDA_PATH and RUSTFLAGS so the linker
+# finds cudart_static in the multiarch path.
+CUDA_PATH=/usr \
+RUSTFLAGS="-L /usr/lib/x86_64-linux-gnu" \
+CMAKE_CUDA_ARCHITECTURES=86 \
 CMAKE_CUDA_STANDARD=17 \
 CMAKE_POSITION_INDEPENDENT_CODE=ON \
 ./build-gpu.sh
