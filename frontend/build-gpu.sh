@@ -176,16 +176,17 @@ echo ""
 
 # NO_STRIP true due to issues with bundling appImage
 NO_STRIP=true $PKG_MGR run tauri:build
+BUILD_EXIT_CODE=$?
 
-if [ $? -eq 0 ]; then
+if [ $BUILD_EXIT_CODE -eq 0 ]; then
   echo ""
   echo -e "${GREEN}✅ Build completed successfully!${NC}"
   echo ""
   echo -e "${GREEN}🎉 Complete Tauri application built with GPU acceleration!${NC}"
 else
   echo ""
-  echo -e "${RED}❌ Build failed${NC}"
-  exit 1
+  echo -e "${YELLOW}⚠️ tauri:build exited with code $BUILD_EXIT_CODE${NC}"
+  echo -e "${YELLOW}   Continuing to post-build fixes — artifacts may still be usable${NC}"
 fi
 
 # Post-bundle: fix the AppImage's `.DirIcon` symlink.
@@ -251,4 +252,9 @@ if [[ "$OS" == "linux" ]]; then
     rm -rf "$FIX_TMP"
   fi
 fi
+
+# Preserve the original tauri:build exit code so the script still surfaces
+# real failures to CI / callers, but only after the post-bundle fixes
+# (notably the .DirIcon repack) have had a chance to run.
+exit $BUILD_EXIT_CODE
 
