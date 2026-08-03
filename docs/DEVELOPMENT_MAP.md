@@ -57,6 +57,13 @@ worker and source-continuity regressions before upload.
 The separate macOS system tap in `audio/capture/core_audio.rs` now survives
 ring-buffer pressure and closes its async wake registration race; neither path
 has a physical macOS reproduction/qualification yet.
+On Linux, system audio comes from the sound server's monitor source, read through
+ALSA's `pulse` plugin by `audio/capture/linux_monitor.rs`; CPAL cannot reach it and
+its `default` capture device is the microphone. `audio/stream.rs` routes every
+Linux `DeviceType::System` stream there, and `devices/speakers.rs` /
+`devices/platform/linux.rs` offer it as the default system device whenever a
+monitor is available. Like the Linux CPAL microphone, it feeds
+`process_audio_data` without capture timestamps.
 `frontend/src/app/layout.tsx` now loads packaged Inter font files from
 `@fontsource-variable/inter` rather than fetching Google CSS during a Next
 production build. `globals.css` owns `--font-sans`, and `frontend/pnpm-lock.yaml`

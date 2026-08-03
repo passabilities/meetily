@@ -8,6 +8,9 @@ pub mod per_app;
 #[cfg(target_os = "macos")]
 pub mod core_audio;
 
+#[cfg(target_os = "linux")]
+pub mod linux_monitor;
+
 // Re-export capture functionality
 pub use system::{
     SystemAudioCapture, SystemAudioStream,
@@ -17,6 +20,11 @@ pub use system::{
 
 #[cfg(target_os = "macos")]
 pub use core_audio::{CoreAudioCapture, CoreAudioStream};
+
+#[cfg(target_os = "linux")]
+pub use linux_monitor::{
+    is_monitor_available, LinuxMonitorCapture, DEFAULT_MONITOR_DEVICE_NAME,
+};
 
 // Re-export backend configuration
 pub use backend_config::{
