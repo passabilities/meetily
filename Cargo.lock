@@ -3566,6 +3566,7 @@ dependencies = [
 name = "meetily"
 version = "0.4.1"
 dependencies = [
+ "alsa",
  "anyhow",
  "async-trait",
  "bytemuck",
