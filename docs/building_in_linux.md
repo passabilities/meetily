@@ -155,15 +155,6 @@ CMAKE_POSITION_INDEPENDENT_CODE=ON \
 - `CMAKE_CUDA_STANDARD=17`: Ensures C++17 compatibility
 - `CMAKE_POSITION_INDEPENDENT_CODE=ON`: Fixes linking issues on modern systems
 
-> ⚠️ **Ubuntu's `nvidia-cuda-toolkit` package:** On Debian/Ubuntu, the apt-installed CUDA toolkit places libraries under `/usr/lib/x86_64-linux-gnu/` rather than the `/usr/local/cuda/lib64/` layout that `llama-cpp-sys` expects. If you see `could not find native static library 'cudart_static'`, also export:
->
-> ```bash
-> export CUDA_PATH=/usr
-> export RUSTFLAGS="-L /usr/lib/x86_64-linux-gnu"
-> ```
->
-> Users who installed CUDA from NVIDIA's official `.run` installer or repo (which uses `/usr/local/cuda`) don't need this.
-
 ---
 
 ### 🔵 Vulkan Setup (Cross-Platform Fallback)
@@ -272,11 +263,6 @@ target/release/bundle/deb/meetily_<version>_amd64.deb
 - **Fix:** Install `nvidia-cuda-toolkit` or set `CUDA_PATH` environment variable
 - **Check:** `nvcc --version` should work
 
-### "could not find native static library `cudart_static`"
-
-- **Cause:** Ubuntu/Debian's `nvidia-cuda-toolkit` puts CUDA libraries in the multiarch path, not `/usr/local/cuda/lib64`.
-- **Fix:** Export `CUDA_PATH=/usr` and `RUSTFLAGS="-L /usr/lib/x86_64-linux-gnu"` before running `./build-gpu.sh`. See the [NVIDIA CUDA Setup](#-nvidia-cuda-setup) section.
-
 ### "fatal error: 'stdbool.h' file not found" (bindgen)
 
 - **Cause:** `clang` / `libclang-dev` is not installed. `bindgen` (used by `llama-cpp-sys`) needs them to parse C headers.
@@ -354,10 +340,6 @@ sudo apt install nvidia-driver-550 nvidia-cuda-toolkit
 nvidia-smi --query-gpu=compute_cap --format=csv
 
 # Build (adjust architecture for your GPU; 86 = RTX 30-series)
-# On Ubuntu/Debian, also export CUDA_PATH and RUSTFLAGS so the linker
-# finds cudart_static in the multiarch path.
-CUDA_PATH=/usr \
-RUSTFLAGS="-L /usr/lib/x86_64-linux-gnu" \
 CMAKE_CUDA_ARCHITECTURES=86 \
 CMAKE_CUDA_STANDARD=17 \
 CMAKE_POSITION_INDEPENDENT_CODE=ON \
