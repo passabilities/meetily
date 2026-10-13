@@ -1,6 +1,8 @@
 use crate::database::repositories::summary_context::{
     SummaryContextRepository, SummaryContextScope, MAX_SUMMARY_CONTEXT_CHARS,
 };
+use crate::database::repositories::folder::FolderRepository;
+use crate::organization::notify_meetings_changed;
 use crate::state::AppState;
 use crate::summary::context::{load_inherited_contexts, InheritedContext};
 use serde::Serialize;
@@ -92,6 +94,32 @@ pub(crate) async fn save_global_context(pool: &SqlitePool, context: &str) -> Res
         .map_err(|e| format!("Failed to save summary context: {}", e))
 }
 
+pub(crate) async fn get_folder_context(
+    pool: &SqlitePool,
+    folder_id: &str,
+) -> Result<ContextText, String> {
+    let row = SummaryContextRepository::get(pool, SummaryContextScope::Folder, folder_id)
+        .await
+        .map_err(|e| format!("Failed to load summary context: {}", e))?;
+    Ok(ContextText {
+        context: row.map(|r| r.context).unwrap_or_default(),
+    })
+}
+
+pub(crate) async fn save_folder_context(
+    pool: &SqlitePool,
+    folder_id: &str,
+    context: &str,
+) -> Result<(), String> {
+    check_context_length(context)?;
+    FolderRepository::get_live(pool, folder_id)
+        .await
+        .map_err(|e| e.to_string())?;
+    SummaryContextRepository::save(pool, SummaryContextScope::Folder, folder_id, context, true)
+        .await
+        .map_err(|e| format!("Failed to save summary context: {}", e))
+}
+
 /// Gets a meeting's saved summary context and the inherited levels that apply to it.
 #[tauri::command]
 pub async fn api_get_meeting_summary_context(
@@ -129,9 +157,33 @@ pub async fn api_save_global_summary_context(
     save_global_context(state.db_manager.pool(), &context).await
 }
 
+/// Gets the summary context of one folder.
+#[tauri::command]
+pub async fn api_get_folder_summary_context(
+    state: tauri::State<'_, AppState>,
+    folder_id: String,
+) -> Result<ContextText, String> {
+    get_folder_context(state.db_manager.pool(), &folder_id).await
+}
+
+/// Saves the summary context of one folder and tells open screens to refresh.
+#[tauri::command]
+pub async fn api_save_folder_summary_context<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    state: tauri::State<'_, AppState>,
+    folder_id: String,
+    context: String,
+) -> Result<(), String> {
+    save_folder_context(state.db_manager.pool(), &folder_id, &context).await?;
+    notify_meetings_changed(&app);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::database::repositories::folder::FolderRepository;
+    use crate::database::repositories::meeting::MeetingsRepository;
     use crate::database::repositories::summary_context::test_util::{insert_meeting, test_pool};
 
     #[tokio::test]
@@ -199,5 +251,63 @@ mod tests {
         assert!(save_global_context(&pool, &over_limit).await.is_err());
         // The rejected save left the earlier text in place.
         assert_eq!(get_meeting_context(&pool, "m1").await.unwrap().context, at_limit);
+    }
+
+    #[tokio::test]
+    async fn folder_context_round_trips_and_starts_empty() {
+        let pool = test_pool().await;
+        let folder = FolderRepository::create(&pool, "Vendor sync").await.unwrap();
+        assert_eq!(
+            get_folder_context(&pool, &folder.id).await.unwrap(),
+            ContextText { context: String::new() }
+        );
+        save_folder_context(&pool, &folder.id, " Weekly sync with Initech. ").await.unwrap();
+        assert_eq!(
+            get_folder_context(&pool, &folder.id).await.unwrap(),
+            ContextText { context: "Weekly sync with Initech.".to_string() }
+        );
+    }
+
+    #[tokio::test]
+    async fn saving_for_a_missing_or_deleted_folder_is_an_error_and_stores_nothing() {
+        let pool = test_pool().await;
+        let error = save_folder_context(&pool, "folder-missing", "text").await.unwrap_err();
+        assert!(error.contains("Folder not found"), "{error}");
+
+        let folder = FolderRepository::create(&pool, "Vendor sync").await.unwrap();
+        FolderRepository::delete(&pool, &folder.id).await.unwrap();
+        let error = save_folder_context(&pool, &folder.id, "text").await.unwrap_err();
+        assert!(error.contains("Folder not found"), "{error}");
+        assert_eq!(
+            SummaryContextRepository::get(&pool, SummaryContextScope::Folder, &folder.id)
+                .await
+                .unwrap(),
+            None
+        );
+    }
+
+    #[tokio::test]
+    async fn folder_context_over_the_limit_is_rejected() {
+        let pool = test_pool().await;
+        let folder = FolderRepository::create(&pool, "Vendor sync").await.unwrap();
+        let over_limit = "x".repeat(MAX_SUMMARY_CONTEXT_CHARS + 1);
+        assert!(save_folder_context(&pool, &folder.id, &over_limit).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn a_filed_meeting_lists_its_folder_among_the_inherited_levels() {
+        let pool = test_pool().await;
+        insert_meeting(&pool, "m1").await;
+        let folder = FolderRepository::create(&pool, "Vendor sync").await.unwrap();
+        MeetingsRepository::set_folder(&pool, "m1", Some(&folder.id)).await.unwrap();
+        save_global_context(&pool, "I am Noah.").await.unwrap();
+        save_folder_context(&pool, &folder.id, "Weekly sync.").await.unwrap();
+
+        let inherited = get_meeting_context(&pool, "m1").await.unwrap().inherited;
+        assert_eq!(inherited.len(), 2);
+        assert_eq!(inherited[1].scope, SummaryContextScope::Folder);
+        assert_eq!(inherited[1].scope_id, folder.id);
+        assert_eq!(inherited[1].label.as_deref(), Some("Vendor sync"));
+        assert_eq!(inherited[1].context, "Weekly sync.");
     }
 }

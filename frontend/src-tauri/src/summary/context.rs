@@ -19,11 +19,11 @@ pub struct InheritedContext {
     pub context: String,
 }
 
-/// Inherited levels that apply to this meeting, most general first.
-/// Levels with empty text are left out.
+/// Inherited levels that apply to this meeting, most general first: the global
+/// level, then the meeting's own folder. Levels with empty text are left out.
 pub async fn load_inherited_contexts(
     pool: &SqlitePool,
-    _meeting_id: &str,
+    meeting_id: &str,
 ) -> Result<Vec<InheritedContext>, sqlx::Error> {
     let mut levels = Vec::new();
     if let Some(row) = SummaryContextRepository::get(pool, SummaryContextScope::Global, "").await? {
@@ -34,6 +34,29 @@ pub async fn load_inherited_contexts(
                 label: None,
                 context: row.context,
             });
+        }
+    }
+
+    let folder: Option<(String, String)> = sqlx::query_as(
+        "SELECT f.id, f.name FROM meetings m
+         JOIN folders f ON f.id = m.folder_id
+         WHERE m.id = ? AND f.deleted_at IS NULL",
+    )
+    .bind(meeting_id)
+    .fetch_optional(pool)
+    .await?;
+    if let Some((folder_id, folder_name)) = folder {
+        if let Some(row) =
+            SummaryContextRepository::get(pool, SummaryContextScope::Folder, &folder_id).await?
+        {
+            if !row.context.is_empty() {
+                levels.push(InheritedContext {
+                    scope: SummaryContextScope::Folder,
+                    scope_id: folder_id,
+                    label: Some(folder_name),
+                    context: row.context,
+                });
+            }
         }
     }
     Ok(levels)
@@ -115,7 +138,11 @@ pub async fn resolve_summary_context(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::database::repositories::summary_context::test_util::{bare_pool, test_pool};
+    use crate::database::repositories::folder::FolderRepository;
+    use crate::database::repositories::meeting::MeetingsRepository;
+    use crate::database::repositories::summary_context::test_util::{
+        bare_pool, insert_meeting, test_pool,
+    };
     use crate::database::repositories::summary_context::SummaryContextScope::{
         Folder, Global, Meeting,
     };
@@ -221,5 +248,102 @@ mod tests {
             resolve_summary_context(&pool, "m1", "raw text", true).await,
             "raw text"
         );
+    }
+
+    /// A meeting filed in a new folder that has context. Returns the folder id.
+    async fn filed_meeting(pool: &SqlitePool, meeting_id: &str, folder_name: &str, text: &str) -> String {
+        insert_meeting(pool, meeting_id).await;
+        let folder = FolderRepository::create(pool, folder_name).await.unwrap();
+        MeetingsRepository::set_folder(pool, meeting_id, Some(&folder.id)).await.unwrap();
+        SummaryContextRepository::save(pool, Folder, &folder.id, text, true).await.unwrap();
+        folder.id
+    }
+
+    fn folder_level(folder_id: &str, name: &str, text: &str) -> InheritedContext {
+        InheritedContext {
+            scope: Folder,
+            scope_id: folder_id.to_string(),
+            label: Some(name.to_string()),
+            context: text.to_string(),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_filed_meeting_inherits_global_then_its_folder() {
+        let pool = test_pool().await;
+        SummaryContextRepository::save(&pool, Global, "", "I am Noah.", true).await.unwrap();
+        let folder_id = filed_meeting(&pool, "m1", "Vendor sync", "Weekly sync with Initech.").await;
+
+        assert_eq!(
+            load_inherited_contexts(&pool, "m1").await.unwrap(),
+            vec![
+                level(Global, None, "I am Noah."),
+                folder_level(&folder_id, "Vendor sync", "Weekly sync with Initech."),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn an_unfiled_meeting_inherits_no_folder_level() {
+        let pool = test_pool().await;
+        SummaryContextRepository::save(&pool, Global, "", "I am Noah.", true).await.unwrap();
+        filed_meeting(&pool, "filed", "Vendor sync", "Weekly sync.").await;
+        insert_meeting(&pool, "unfiled").await;
+
+        assert_eq!(
+            load_inherited_contexts(&pool, "unfiled").await.unwrap(),
+            vec![level(Global, None, "I am Noah.")]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_folder_without_text_is_left_out() {
+        let pool = test_pool().await;
+        filed_meeting(&pool, "m1", "Vendor sync", "   ").await;
+        assert!(load_inherited_contexts(&pool, "m1").await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn the_level_follows_the_meeting_to_another_folder_and_uses_the_current_name() {
+        let pool = test_pool().await;
+        let first = filed_meeting(&pool, "m1", "Vendor sync", "Weekly sync.").await;
+        let second = FolderRepository::create(&pool, "Board").await.unwrap();
+        SummaryContextRepository::save(&pool, Folder, &second.id, "Quarterly board prep.", true)
+            .await
+            .unwrap();
+
+        FolderRepository::rename(&pool, &first, "Initech sync").await.unwrap();
+        assert_eq!(
+            load_inherited_contexts(&pool, "m1").await.unwrap(),
+            vec![folder_level(&first, "Initech sync", "Weekly sync.")]
+        );
+
+        MeetingsRepository::set_folder(&pool, "m1", Some(&second.id)).await.unwrap();
+        assert_eq!(
+            load_inherited_contexts(&pool, "m1").await.unwrap(),
+            vec![folder_level(&second.id, "Board", "Quarterly board prep.")]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_deleted_folder_no_longer_applies() {
+        let pool = test_pool().await;
+        let folder_id = filed_meeting(&pool, "m1", "Vendor sync", "Weekly sync.").await;
+
+        // A tombstoned folder is ignored even if a meeting still points at it.
+        sqlx::query("UPDATE folders SET deleted_at = updated_at WHERE id = ?")
+            .bind(&folder_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert!(load_inherited_contexts(&pool, "m1").await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn deleting_a_folder_through_the_repository_stops_inheritance() {
+        let pool = test_pool().await;
+        let folder_id = filed_meeting(&pool, "m1", "Vendor sync", "Weekly sync.").await;
+        FolderRepository::delete(&pool, &folder_id).await.unwrap();
+        assert!(load_inherited_contexts(&pool, "m1").await.unwrap().is_empty());
     }
 }
