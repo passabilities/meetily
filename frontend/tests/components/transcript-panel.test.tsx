@@ -58,7 +58,7 @@ describe('transcript panel during playback', () => {
     await act(async () => {
       renderer = create(
         <TranscriptPanel
-          transcripts={[]} customPrompt="" onPromptChange={noop} onCopyTranscript={noop} onOpenMeetingFolder={async () => {}}
+          transcripts={[]} onCopyTranscript={noop} onOpenMeetingFolder={async () => {}}
           isRecording={false} usePagination segments={segments} hasMore={false} meetingId="meeting-a" meetingFolderPath="/recordings/meeting"
         />,
       );
@@ -89,7 +89,7 @@ describe('transcript panel during playback', () => {
     await act(async () => {
       renderer = create(
         <TranscriptPanel
-          transcripts={[]} customPrompt="" onPromptChange={noop} onCopyTranscript={noop} onOpenMeetingFolder={async () => {}}
+          transcripts={[]} onCopyTranscript={noop} onOpenMeetingFolder={async () => {}}
           isRecording={false} usePagination segments={segments} hasMore={false} meetingId="meeting-a" meetingFolderPath="/recordings/meeting"
           onRefetchTranscripts={refetch}
         />,
