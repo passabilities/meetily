@@ -27,16 +27,7 @@ pub async fn load_inherited_contexts(
     meeting_id: &str,
 ) -> Result<Vec<InheritedContext>, sqlx::Error> {
     let mut levels = Vec::new();
-    if let Some(row) = SummaryContextRepository::get(pool, SummaryContextScope::Global, "").await? {
-        if !row.context.is_empty() {
-            levels.push(InheritedContext {
-                scope: SummaryContextScope::Global,
-                scope_id: String::new(),
-                label: None,
-                context: row.context,
-            });
-        }
-    }
+    levels.extend(inherited_level(pool, SummaryContextScope::Global, "", None).await?);
 
     let folder: Option<(String, String)> = sqlx::query_as(
         "SELECT f.id, f.name FROM meetings m
@@ -47,20 +38,30 @@ pub async fn load_inherited_contexts(
     .fetch_optional(pool)
     .await?;
     if let Some((folder_id, folder_name)) = folder {
-        if let Some(row) =
-            SummaryContextRepository::get(pool, SummaryContextScope::Folder, &folder_id).await?
-        {
-            if !row.context.is_empty() {
-                levels.push(InheritedContext {
-                    scope: SummaryContextScope::Folder,
-                    scope_id: folder_id,
-                    label: Some(folder_name),
-                    context: row.context,
-                });
-            }
-        }
+        levels.extend(
+            inherited_level(pool, SummaryContextScope::Folder, &folder_id, Some(folder_name))
+                .await?,
+        );
     }
     Ok(levels)
+}
+
+/// One level's saved text as an inherited context, or nothing when it has no text.
+async fn inherited_level(
+    pool: &SqlitePool,
+    scope: SummaryContextScope,
+    scope_id: &str,
+    label: Option<String>,
+) -> Result<Option<InheritedContext>, sqlx::Error> {
+    Ok(SummaryContextRepository::get(pool, scope, scope_id)
+        .await?
+        .filter(|row| !row.context.is_empty())
+        .map(|row| InheritedContext {
+            scope,
+            scope_id: scope_id.to_string(),
+            label,
+            context: row.context,
+        }))
 }
 
 fn heading(level: &InheritedContext) -> String {

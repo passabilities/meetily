@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -10,7 +9,12 @@ import {
   DialogFooter,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { SUMMARY_CONTEXT_MAX_CHARS, summaryContextCounter } from '@/lib/summary-context';
+import {
+  SUMMARY_CONTEXT_MAX_CHARS,
+  SUMMARY_CONTEXT_TEXTAREA_CLASS,
+  reportSummaryContextError,
+  summaryContextCounter,
+} from '@/lib/summary-context';
 import { summaryContextService } from '@/services/summaryContextService';
 
 type Folder = { id: string; name: string };
@@ -56,8 +60,7 @@ function FolderContextForm({ folder, onClose }: { folder: Folder; onClose: () =>
       .catch(error => {
         if (cancelled) return;
         // Saving over text that could not be read would lose it, so close instead.
-        console.error('Failed to load summary context:', error);
-        toast.error('Failed to load summary context', { description: String(error) });
+        reportSummaryContextError('load', error);
         onClose();
       });
     return () => {
@@ -77,8 +80,7 @@ function FolderContextForm({ folder, onClose }: { folder: Folder; onClose: () =>
       await summaryContextService.saveFolder(folderId, text);
       onClose();
     } catch (error) {
-      console.error('Failed to save summary context:', error);
-      toast.error('Failed to save summary context', { description: String(error) });
+      reportSummaryContextError('save', error);
     } finally {
       setIsSaving(false);
     }
@@ -95,7 +97,7 @@ function FolderContextForm({ folder, onClose }: { folder: Folder; onClose: () =>
       <textarea
         ref={textareaRef}
         aria-label="Summary context for this folder"
-        className="w-full px-3 py-2 border border-gray-200 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 bg-white shadow-sm min-h-[140px] resize-y disabled:bg-gray-50"
+        className={`${SUMMARY_CONTEXT_TEXTAREA_CLASS} min-h-[140px]`}
         value={text}
         onChange={e => setText(e.target.value)}
         disabled={!isLoaded}

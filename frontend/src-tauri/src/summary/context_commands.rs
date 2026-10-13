@@ -80,13 +80,22 @@ pub(crate) async fn save_meeting_context(
     .map_err(|e| format!("Failed to save summary context: {}", e))
 }
 
-pub(crate) async fn get_global_context(pool: &SqlitePool) -> Result<ContextText, String> {
-    let row = SummaryContextRepository::get(pool, SummaryContextScope::Global, "")
+/// The saved text of one level; empty when nothing has been saved for it.
+async fn get_context_text(
+    pool: &SqlitePool,
+    scope: SummaryContextScope,
+    scope_id: &str,
+) -> Result<ContextText, String> {
+    let row = SummaryContextRepository::get(pool, scope, scope_id)
         .await
         .map_err(|e| format!("Failed to load summary context: {}", e))?;
     Ok(ContextText {
         context: row.map(|r| r.context).unwrap_or_default(),
     })
+}
+
+pub(crate) async fn get_global_context(pool: &SqlitePool) -> Result<ContextText, String> {
+    get_context_text(pool, SummaryContextScope::Global, "").await
 }
 
 pub(crate) async fn save_global_context(pool: &SqlitePool, context: &str) -> Result<(), String> {
@@ -100,12 +109,7 @@ pub(crate) async fn get_folder_context(
     pool: &SqlitePool,
     folder_id: &str,
 ) -> Result<ContextText, String> {
-    let row = SummaryContextRepository::get(pool, SummaryContextScope::Folder, folder_id)
-        .await
-        .map_err(|e| format!("Failed to load summary context: {}", e))?;
-    Ok(ContextText {
-        context: row.map(|r| r.context).unwrap_or_default(),
-    })
+    get_context_text(pool, SummaryContextScope::Folder, folder_id).await
 }
 
 pub(crate) async fn save_folder_context(
