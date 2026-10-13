@@ -10,6 +10,7 @@ import { toast } from 'sonner';
 import { TranscriptPanel } from '@/components/MeetingDetails/TranscriptPanel';
 import { SummaryPanel } from '@/components/MeetingDetails/SummaryPanel';
 import { SummaryContextBox } from '@/components/MeetingDetails/SummaryContextBox';
+import { FolderContextDialog } from '@/components/Sidebar/FolderContextDialog';
 import { MeetingDetailsSplitView, type MeetingDetailsTab } from '@/components/MeetingDetails/MeetingDetailsSplitView';
 import { ModelConfig } from '@/components/ModelSettingsModal';
 
@@ -158,8 +159,14 @@ export default function PageContent({
     await handleRegenerateSummary(summaryContextText, useInherited);
   }, [flushSummaryContext, handleRegenerateSummary, summaryContextLoaded, summaryContextText, useInherited]);
 
+  const [editingFolder, setEditingFolder] = useState<{ id: string; name: string } | null>(null);
+  const closeFolderContext = useCallback(() => setEditingFolder(null), []);
   const handleEditInheritedContext = useCallback((level: InheritedContext) => {
-    if (level.scope === 'global') router.push('/settings?tab=summaryModels');
+    if (level.scope === 'global') {
+      router.push('/settings?tab=summaryModels');
+    } else {
+      setEditingFolder({ id: level.scopeId, name: level.label ?? 'Folder' });
+    }
   }, [router]);
 
   const copyOperations = useCopyOperations({
@@ -300,6 +307,7 @@ export default function PageContent({
           }
         />
       </div>
+      <FolderContextDialog folder={editingFolder} onClose={closeFolderContext} />
     </motion.div>
   );
 }
