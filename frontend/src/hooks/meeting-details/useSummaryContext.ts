@@ -6,6 +6,7 @@ import {
   type InheritedContext,
 } from '@/lib/summary-context';
 import { summaryContextService } from '@/services/summaryContextService';
+import { organizationService } from '@/services/organizationService';
 
 interface SavedValue {
   context: string;
@@ -24,6 +25,8 @@ export function useSummaryContext(
   const [inherited, setInherited] = useState<InheritedContext[]>(NO_INHERITED);
   const [isLoaded, setIsLoaded] = useState(false);
   const valueRef = useRef<SavedValue>(EMPTY);
+  const meetingIdRef = useRef(meetingId);
+  meetingIdRef.current = meetingId;
 
   const [saver] = useState(() => createDebouncedSaver<SavedValue>(
     (id, next) => summaryContextService.saveMeeting(id, next.context, next.useInherited),
@@ -80,6 +83,31 @@ export function useSummaryContext(
 
   const flush = useCallback(() => saver.flush(), [saver]);
 
+  /** Refreshes the inherited levels only; the text and switch on screen are left alone. */
+  const reload = useCallback(async () => {
+    try {
+      const result = await summaryContextService.getMeeting(meetingId);
+      if (meetingIdRef.current === meetingId) setInherited(result.inherited);
+    } catch (error) {
+      console.error('Failed to refresh inherited summary context:', error);
+    }
+  }, [meetingId]);
+
+  // Folder context edits and moving the meeting to another folder change what is inherited.
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten: (() => void) | undefined;
+    organizationService.onMeetingsChanged(() => { void reload(); })
+      .then(stop => {
+        if (cancelled) stop(); else unlisten = stop;
+      })
+      .catch(error => console.error('Failed to listen for meetings-changed:', error));
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [reload]);
+
   return {
     text: value.context,
     setText,
@@ -88,5 +116,6 @@ export function useSummaryContext(
     inherited,
     isLoaded,
     flush,
+    reload,
   };
 }

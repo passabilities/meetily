@@ -906,6 +906,8 @@ pub fn run() {
             summary::context_commands::api_save_meeting_summary_context,
             summary::context_commands::api_get_global_summary_context,
             summary::context_commands::api_save_global_summary_context,
+            summary::context_commands::api_get_folder_summary_context,
+            summary::context_commands::api_save_folder_summary_context,
             // Built-in AI commands
             summary::summary_engine::commands::builtin_ai_list_models,
             summary::summary_engine::commands::builtin_ai_get_model_info,
