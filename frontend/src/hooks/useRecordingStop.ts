@@ -64,6 +64,7 @@ export function useRecordingStop(
     refetchMeetings,
     setCurrentMeeting,
     setMeetings,
+    applyPendingOrganization,
     meetings,
     setIsMeetingActive,
   } = useSidebar();
@@ -273,6 +274,8 @@ export function useRecordingStop(
             throw new Error('No meeting ID received from save operation');
           }
 
+          await applyPendingOrganization(meetingId);
+
           let shouldDetectSummaryLanguage = false;
           try {
             shouldDetectSummaryLanguage = !(await applyPinnedSummaryLanguageToMeeting(meetingId));
@@ -440,6 +443,7 @@ export function useRecordingStop(
     refetchMeetings,
     setCurrentMeeting,
     setMeetings,
+    applyPendingOrganization,
     meetings,
     setIsMeetingActive,
     router,

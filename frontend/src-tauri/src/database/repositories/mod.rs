@@ -1,7 +1,10 @@
+pub mod folder;
 pub mod meeting;
+pub mod org_error;
 pub mod person;
 pub mod setting;
 pub mod speaker;
 pub mod summary;
+pub mod tag;
 pub mod transcript;
 pub mod transcript_chunk;
