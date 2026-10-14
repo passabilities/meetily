@@ -33,6 +33,14 @@ static IS_MONITORING: AtomicBool = AtomicBool::new(false);
 /// Latest levels keyed by device name (shared with cpal callbacks).
 type LevelMap = Arc<Mutex<std::collections::HashMap<String, AudioLevelData>>>;
 
+/// A running level stream. Linux system audio is a sound-server monitor source
+/// that CPAL cannot open, so it is read like the recording path reads it.
+enum LevelStream {
+    Cpal(cpal::Stream),
+    #[cfg(target_os = "linux")]
+    LinuxMonitor(super::capture::LinuxMonitorCapture),
+}
+
 /// Start real level monitoring for the given device names.
 /// Empty list → default mic (input) + default output (system loopback on WASAPI).
 pub async fn start_monitoring<R: Runtime>(
@@ -62,16 +70,28 @@ pub async fn start_monitoring<R: Runtime>(
     let stream_thread = thread::Builder::new()
         .name("af-level-monitor".into())
         .spawn(move || {
-            let mut _streams: Vec<cpal::Stream> = Vec::new();
+            let mut _streams: Vec<LevelStream> = Vec::new();
 
             for name in &names {
+                #[cfg(target_os = "linux")]
+                if super::capture::linux_monitor::is_monitor_device_name(name) {
+                    match open_linux_monitor_level_stream(name, levels.clone()) {
+                        Ok(capture) => {
+                            info!("Level stream playing: {}", name);
+                            _streams.push(LevelStream::LinuxMonitor(capture));
+                        }
+                        Err(e) => warn!("Could not open level stream for '{}': {}", name, e),
+                    }
+                    continue;
+                }
+
                 match open_level_stream(name, levels.clone()) {
                     Ok(stream) => {
                         if let Err(e) = stream.play() {
                             warn!("Failed to play level stream for '{}': {}", name, e);
                         } else {
                             info!("Level stream playing: {}", name);
-                            _streams.push(stream);
+                            _streams.push(LevelStream::Cpal(stream));
                         }
                     }
                     Err(e) => warn!("Could not open level stream for '{}': {}", name, e),
@@ -90,8 +110,15 @@ pub async fn start_monitoring<R: Runtime>(
             }
 
             for s in _streams {
-                let _ = s.pause();
-                drop(s);
+                match s {
+                    LevelStream::Cpal(stream) => {
+                        let _ = stream.pause();
+                        drop(stream);
+                    }
+                    // Blocks until its capture thread exits.
+                    #[cfg(target_os = "linux")]
+                    LevelStream::LinuxMonitor(capture) => capture.stop(),
+                }
             }
             running_flag.store(false, Ordering::SeqCst);
             info!("Level monitor streams stopped");
@@ -156,6 +183,13 @@ fn default_monitor_devices() -> Vec<String> {
             out.push(n);
         }
     }
+    // A Linux output device cannot be captured; system audio is the monitor source.
+    #[cfg(target_os = "linux")]
+    if super::capture::is_monitor_available() {
+        out.push(super::capture::DEFAULT_MONITOR_DEVICE_NAME.to_string());
+        return out;
+    }
+
     if let Some(d) = host.default_output_device() {
         if let Ok(n) = d.name() {
             if !out.contains(&n) {
@@ -164,6 +198,17 @@ fn default_monitor_devices() -> Vec<String> {
         }
     }
     out
+}
+
+#[cfg(target_os = "linux")]
+fn open_linux_monitor_level_stream(
+    device_name: &str,
+    levels: LevelMap,
+) -> Result<super::capture::LinuxMonitorCapture> {
+    let name = device_name.to_string();
+    super::capture::LinuxMonitorCapture::start(device_name, move |format| {
+        move |samples: &[f32]| push_levels(samples, format.channels, &name, "output", &levels)
+    })
 }
 
 /// Open a cpal input stream for levels. Tries mic input first, then WASAPI loopback on output.

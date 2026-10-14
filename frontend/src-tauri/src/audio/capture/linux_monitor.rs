@@ -74,6 +74,16 @@ pub fn pcm_name_for(device_name: &str) -> String {
     DEFAULT_MONITOR_PCM.to_string()
 }
 
+/// Whether `device_name` names a monitor source rather than a CPAL device.
+/// Unlike [`pcm_name_for`], this has no fallback: unknown names are not monitors.
+pub fn is_monitor_device_name(device_name: &str) -> bool {
+    let trimmed = device_name.trim();
+    trimmed == DEFAULT_MONITOR_DEVICE_NAME
+        || trimmed.starts_with("pulse:")
+        || trimmed.starts_with("pipewire:")
+        || trimmed.ends_with(".monitor")
+}
+
 /// Check whether a monitor source can actually be opened on this machine.
 ///
 /// Used to decide if system audio should be offered at all (a machine with no
@@ -337,6 +347,15 @@ impl Drop for LinuxMonitorCapture {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn recognizes_monitor_device_names() {
+        assert!(is_monitor_device_name(DEFAULT_MONITOR_DEVICE_NAME));
+        assert!(is_monitor_device_name("pulse:@DEFAULT_MONITOR@"));
+        assert!(is_monitor_device_name("alsa_output.pci-0000_00_1f.3.analog-stereo.monitor"));
+        assert!(!is_monitor_device_name("pipewire"));
+        assert!(!is_monitor_device_name("hw:CARD=NVidia,DEV=3"));
+    }
 
     #[test]
     fn maps_default_names_to_default_monitor() {
