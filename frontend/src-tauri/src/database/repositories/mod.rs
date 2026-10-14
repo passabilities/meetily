@@ -1,7 +1,9 @@
 pub mod folder;
 pub mod meeting;
+pub mod meeting_notes;
 pub mod org_error;
 pub mod person;
+pub mod search_snippet;
 pub mod setting;
 pub mod speaker;
 pub mod summary;

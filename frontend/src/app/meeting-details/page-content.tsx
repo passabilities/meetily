@@ -17,6 +17,7 @@ import { useSpeakerIdentification } from '@/hooks/useSpeakerIdentification';
 import { SummaryPanel } from '@/components/MeetingDetails/SummaryPanel';
 import { SummaryContextBox } from '@/components/MeetingDetails/SummaryContextBox';
 import { FolderContextDialog } from '@/components/Sidebar/FolderContextDialog';
+import { NotesPanel } from '@/components/MeetingNotes/NotesPanel';
 import { MeetingDetailsSplitView, type MeetingDetailsTab } from '@/components/MeetingDetails/MeetingDetailsSplitView';
 import { ModelConfig } from '@/components/ModelSettingsModal';
 
@@ -28,6 +29,7 @@ import type { InheritedContext } from '@/lib/summary-context';
 import { useTemplates } from '@/hooks/meeting-details/useTemplates';
 import { useCopyOperations } from '@/hooks/meeting-details/useCopyOperations';
 import { useMeetingOperations } from '@/hooks/meeting-details/useMeetingOperations';
+import { useMeetingNotes } from '@/hooks/meeting-details/useMeetingNotes';
 import { useConfig } from '@/contexts/ConfigContext';
 import { MeetingOrganizationBar } from '@/components/organization/MeetingOrganizationBar';
 import { TrashedBanner } from '@/components/organization/TrashedBanner';
@@ -299,6 +301,7 @@ export default function PageContent({
       setEditingFolder({ id: level.scopeId, name: level.label ?? 'Folder' });
     }
   }, [router]);
+  const notes = useMeetingNotes(meeting.id);
 
   const copyOperations = useCopyOperations({
     meeting,
@@ -307,6 +310,7 @@ export default function PageContent({
     aiSummary: meetingData.aiSummary,
     blockNoteSummaryRef: meetingData.blockNoteSummaryRef,
     speakerNames,
+    getNotesMarkdown: notes.getMarkdown,
   });
 
   const meetingOperations = useMeetingOperations({
@@ -441,6 +445,18 @@ export default function PageContent({
               onTemplateSelect={templates.handleTemplateSelection}
               isModelConfigLoading={isModelConfigLoading}
               onOpenModelSettings={handleRegisterModalOpen}
+            />
+          }
+          notes={
+            <NotesPanel
+              loadState={notes.loadState}
+              initialBlocks={notes.initialBlocks}
+              initialMarkdown={notes.initialMarkdown}
+              saveState={notes.saveState}
+              onChange={notes.handleChange}
+              onRetryLoad={notes.reload}
+              onRetrySave={notes.retrySave}
+              onCopy={copyOperations.handleCopyNotes}
             />
           }
         />

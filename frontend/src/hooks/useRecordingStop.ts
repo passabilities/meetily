@@ -8,6 +8,7 @@ import { useRecordingState, RecordingStatus } from '@/contexts/RecordingStateCon
 import { storageService } from '@/services/storageService';
 import { loadBetaFeatures } from '@/types/betaFeatures';
 import { transcriptService } from '@/services/transcriptService';
+import { reportUnsavedRecordingNotes, saveRecordingNotesToMeeting, storedRecordingId } from '@/services/recordingNotesDraft';
 import Analytics from '@/lib/analytics';
 import {
   applyPinnedSummaryLanguageToMeeting,
@@ -276,6 +277,9 @@ export function useRecordingStop(
 
           await applyPendingOrganization(meetingId);
 
+          // Notes typed during the recording can be written now that the meeting exists.
+          await saveRecordingNotesToMeeting(storedRecordingId(), meetingId);
+
           let shouldDetectSummaryLanguage = false;
           try {
             shouldDetectSummaryLanguage = !(await applyPinnedSummaryLanguageToMeeting(meetingId));
@@ -412,11 +416,17 @@ export function useRecordingStop(
           toast.error('Failed to save meeting', {
             description: saveError instanceof Error ? saveError.message : 'Unknown error'
           });
+          await reportUnsavedRecordingNotes(storedRecordingId());
           throw saveError;
         }
       } else {
         // No save needed, go back to IDLE
         setStatus(RecordingStatus.IDLE);
+        // A stop called with false can arrive while the recording is still running
+        // (mid-recording transcription errors), so the notes must stay untouched then.
+        if (isCallApi) {
+          await reportUnsavedRecordingNotes(storedRecordingId());
+        }
       }
 
       setIsMeetingActive(false);

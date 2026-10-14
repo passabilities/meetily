@@ -39,6 +39,7 @@ import { NewFolderButton } from './NewFolderButton';
 import { MeetingItemMenu } from './MeetingItemMenu';
 import { MeetingOrganizationBar } from '@/components/organization/MeetingOrganizationBar';
 import { buildSidebarSections, type Folder, type MeetingListItem } from '@/lib/organization';
+import { searchMatchLabel } from '@/lib/search-match';
 import { organizationService } from '@/services/organizationService';
 
 const Sidebar: React.FC = () => {
@@ -543,7 +544,7 @@ const Sidebar: React.FC = () => {
             {/* Show transcript match snippet if available */}
             {hasTranscriptMatch && (
               <div className="mt-1 ml-8 text-xs text-gray-500 bg-yellow-50 p-1.5 rounded border border-yellow-100 line-clamp-2">
-                <span className="font-medium text-yellow-600">Match:</span> {matchingResult.matchContext}
+                <span className="font-medium text-yellow-600">{searchMatchLabel(matchingResult.source)}</span> {matchingResult.matchContext}
               </div>
             )}
           </div>
