@@ -16,6 +16,7 @@ import {
   type Tag,
   type TrashItem,
 } from '@/lib/organization';
+import type { SearchMatchSource } from '@/lib/search-match';
 
 export interface CurrentMeeting {
   id: string;
@@ -28,6 +29,7 @@ interface TranscriptSearchResult {
   title: string;
   matchContext: string;
   timestamp: string;
+  source?: SearchMatchSource;
 }
 
 interface SummaryPoll {
