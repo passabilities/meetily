@@ -31,6 +31,7 @@ import { ComplianceNotification } from '../ComplianceNotification';
 import { Input } from '../ui/input';
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '../ui/input-group';
 import { MeetingSections } from './MeetingSections';
+import { FolderContextDialog } from './FolderContextDialog';
 import { TagFilterChips } from './TagFilterChips';
 import { MeetingTagChips } from './MeetingTagChips';
 import { TagManager } from '@/components/organization/TagManager';
@@ -102,6 +103,8 @@ const Sidebar: React.FC = () => {
   const [folderRename, setFolderRename] = useState<{ folder: Folder; name: string } | null>(null);
   const [newFolderFor, setNewFolderFor] = useState<{ meetingId: string; name: string } | null>(null);
   const [folderDelete, setFolderDelete] = useState<Folder | null>(null);
+  const [folderContext, setFolderContext] = useState<Folder | null>(null);
+  const closeFolderContext = useCallback(() => setFolderContext(null), []);
   const [manageTagsOpen, setManageTagsOpen] = useState(false);
 
   const sections = useMemo(() => buildSidebarSections(meetings, folders, {
@@ -637,6 +640,7 @@ const Sidebar: React.FC = () => {
                   renderMeeting={renderMeetingRow}
                   onDropMeeting={(meetingId, folderId) => void moveMeeting(meetingId, folderId)}
                   onRenameFolder={folder => setFolderRename({ folder, name: folder.name })}
+                  onEditFolderContext={folder => setFolderContext(folder)}
                   onDeleteFolder={folder => setFolderDelete(folder)}
                 />
               </div>
@@ -751,6 +755,8 @@ const Sidebar: React.FC = () => {
           />
         </DialogContent>
       </Dialog>
+
+      <FolderContextDialog folder={folderContext} onClose={closeFolderContext} />
 
       <ConfirmationModal
         isOpen={folderDelete !== null}

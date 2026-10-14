@@ -34,4 +34,14 @@ describe('summary context service', () => {
       ['api_save_global_summary_context', { context: 'new text' }],
     ]);
   });
+
+  test('folder context uses the command and argument names the backend expects', async () => {
+    reply = { context: 'Weekly sync.' };
+    expect(await summaryContextService.getFolder('folder-1')).toBe('Weekly sync.');
+    await summaryContextService.saveFolder('folder-1', 'new text');
+    expect(invoke.mock.calls).toEqual([
+      ['api_get_folder_summary_context', { folderId: 'folder-1' }],
+      ['api_save_folder_summary_context', { folderId: 'folder-1', context: 'new text' }],
+    ]);
+  });
 });
