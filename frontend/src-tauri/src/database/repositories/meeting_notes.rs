@@ -89,7 +89,7 @@ impl MeetingNotesRepository {
             "SELECT m.id, m.title, n.notes_markdown, n.updated_at
              FROM meeting_notes n
              JOIN meetings m ON m.id = n.meeting_id
-             WHERE LOWER(n.notes_markdown) LIKE ?",
+             WHERE LOWER(n.notes_markdown) LIKE ? AND m.deleted_at IS NULL",
         )
         .bind(&pattern)
         .fetch_all(pool)
@@ -264,5 +264,26 @@ mod tests {
             .await
             .unwrap();
         assert!(MeetingNotesRepository::search(&pool, "   ").await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn search_skips_notes_of_trashed_meetings() {
+        let pool = test_pool().await;
+        seed_meeting(&pool, "m1", "Planning").await;
+        seed_meeting(&pool, "m2", "Retro").await;
+        for id in ["m1", "m2"] {
+            MeetingNotesRepository::upsert(&pool, id, "Budget review", Some(BLOCKS))
+                .await
+                .unwrap();
+        }
+        sqlx::query("UPDATE meetings SET deleted_at = datetime('now') WHERE id = 'm2'")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let results = MeetingNotesRepository::search(&pool, "budget").await.unwrap();
+
+        let ids: Vec<&str> = results.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(ids, vec!["m1"]);
     }
 }
