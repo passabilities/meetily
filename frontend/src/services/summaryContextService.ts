@@ -11,4 +11,9 @@ export const summaryContextService = {
     (await invoke<{ context: string }>('api_get_global_summary_context')).context,
   saveGlobal: (context: string) =>
     invoke<void>('api_save_global_summary_context', { context }),
+
+  getFolder: async (folderId: string) =>
+    (await invoke<{ context: string }>('api_get_folder_summary_context', { folderId })).context,
+  saveFolder: (folderId: string, context: string) =>
+    invoke<void>('api_save_folder_summary_context', { folderId, context }),
 };

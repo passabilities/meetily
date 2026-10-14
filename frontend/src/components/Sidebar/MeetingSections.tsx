@@ -23,11 +23,12 @@ interface MeetingSectionsProps {
   renderMeeting: (meeting: MeetingListItem) => ReactNode;
   onDropMeeting: (meetingId: string, folderId: string | null) => void;
   onRenameFolder: (folder: Folder) => void;
+  onEditFolderContext: (folder: Folder) => void;
   onDeleteFolder: (folder: Folder) => void;
 }
 
 export function MeetingSections({
-  sections, renderMeeting, onDropMeeting, onRenameFolder, onDeleteFolder,
+  sections, renderMeeting, onDropMeeting, onRenameFolder, onEditFolderContext, onDeleteFolder,
 }: MeetingSectionsProps) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [dropTarget, setDropTarget] = useState<string | null>(null);
@@ -89,6 +90,9 @@ export function MeetingSections({
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" onClick={e => e.stopPropagation()}>
                     <DropdownMenuItem onSelect={() => onRenameFolder(section.folder!)}>Rename</DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => onEditFolderContext(section.folder!)}>
+                      Edit context…
+                    </DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => onDeleteFolder(section.folder!)} className="text-red-600">
                       Delete folder
                     </DropdownMenuItem>

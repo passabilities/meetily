@@ -4,11 +4,22 @@ import type { MeetingSummaryContext } from '../../src/lib/summary-context';
 
 // Bun shares module mocks between test files; restore the real modules after this suite.
 const originalCore = { ...await import('@tauri-apps/api/core') };
+const originalEvent = { ...await import('@tauri-apps/api/event') };
 const originalToast = { ...await import('sonner') };
 afterAll(() => {
   mock.module('@tauri-apps/api/core', () => originalCore);
+  mock.module('@tauri-apps/api/event', () => originalEvent);
   mock.module('sonner', () => originalToast);
 });
+
+let meetingsChanged: (() => void) | undefined;
+mock.module('@tauri-apps/api/event', () => ({
+  ...originalEvent,
+  listen: async (_event: string, callback: () => void) => {
+    meetingsChanged = callback;
+    return () => { meetingsChanged = undefined; };
+  },
+}));
 
 const toastError = mock((_message: string, _options?: unknown) => {});
 mock.module('sonner', () => ({ toast: { error: toastError, info() {}, success() {}, warning() {} } }));
@@ -185,5 +196,50 @@ describe('summary context for the open meeting', () => {
     expect(saved).toEqual([]);
     resolveB(context());
     await settle();
+  });
+
+  const folder = { scope: 'folder' as const, scopeId: 'folder-1', label: 'Vendor sync', context: 'Weekly sync.' };
+
+  test('a meetings-changed event refreshes the inherited levels without touching typed text', async () => {
+    await show('meeting-a');
+    await act(async () => { state.setText('still typing'); state.setUseInherited(false); });
+    load = async () => context({ context: 'server text', useInherited: true, inherited: [folder] });
+
+    expect(meetingsChanged).toBeDefined();
+    meetingsChanged!();
+    await settle();
+
+    expect(state.inherited).toEqual([folder]);
+    expect(state.text).toBe('still typing');
+    expect(state.useInherited).toBe(false);
+  });
+
+  test('a refresh that answers after another meeting was opened is ignored', async () => {
+    await show('meeting-a');
+    let resolveA!: (value: MeetingSummaryContext) => void;
+    load = meetingId => meetingId === 'meeting-a'
+      ? new Promise(done => { resolveA = done; })
+      : Promise.resolve(context());
+    const refresh = state.reload();
+    await show('meeting-b');
+    resolveA(context({ inherited: [folder] }));
+    await act(async () => { await refresh; });
+    expect(state.inherited).toEqual([]);
+  });
+
+  test('a failed refresh keeps the levels already shown', async () => {
+    load = async () => context({ inherited: [folder] });
+    await show('meeting-a');
+    load = async () => { throw new Error('database locked'); };
+    await act(async () => { await state.reload(); });
+    expect(state.inherited).toEqual([folder]);
+    expect(toastError).not.toHaveBeenCalled();
+  });
+
+  test('leaving the meeting stops listening for changes', async () => {
+    await show('meeting-a');
+    await act(async () => renderer.unmount());
+    renderer = undefined as unknown as ReactTestRenderer;
+    expect(meetingsChanged).toBeUndefined();
   });
 });
